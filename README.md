@@ -30,7 +30,7 @@ To start training the model, use the following command and specify the input dat
 
 #### Example:
 ```bash
-$ python3 main.py --input_file X_Y_output.npz --model_arch "deep_cnn"
+python3 main.py --input_file X_Y_output.npz --model_arch "deep_cnn"
 ```
 
 ### `one_hot_encode_data.py`
@@ -43,7 +43,7 @@ If you alreayd have the .npz file then theres no need to run it again.
 
 #### Example:
 ```bash
-$ python3 one_hot_encode_data.py --csv_file processed_file.csv
+python3 one_hot_encode_data.py --csv_file processed_file.csv
 ```
 
 ---
