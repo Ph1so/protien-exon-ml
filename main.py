@@ -98,10 +98,24 @@ def load_and_preprocess_data(file_path):
     return X, Y
 
 def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LIST)):
-    input_layer = layers.Input(shape=(sequence_length, vocab_size), name="Input_Layer")
+    """
+    Builds a CNN model optimized for sparse matrices.
     
+    Args:
+    - sequence_length: Length of input sequences
+    - vocab_size: Number of unique features (e.g., amino acids)
+    
+    Returns:
+    - Compiled CNN model
+    """
+    # Input layer for sparse data
+    input_layer = layers.Input(shape=(sequence_length, vocab_size), name="Input_Layer", sparse=True)
+    
+    # Convert sparse input to dense (if required by Conv1D)
+    x = layers.Dense(vocab_size, activation="relu")(input_layer)
+
     # First convolutional block
-    x = layers.Conv1D(64, kernel_size=7, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
+    x = layers.Conv1D(64, kernel_size=7, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     x = layers.Conv1D(128, kernel_size=5, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     x = layers.MaxPooling1D(pool_size=2)(x)
     
@@ -110,33 +124,30 @@ def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LI
     x = layers.Conv1D(512, kernel_size=3, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     x = layers.MaxPooling1D(pool_size=2)(x)
     
-    # Fully connected block
+    # Global Average Pooling to reduce dimensions
     x = layers.GlobalAveragePooling1D()(x)
     x = layers.Dense(1024, activation="relu")(x)
     
     # Output layer for sequence classification (binary classification for each position)
     output_layer = layers.Dense(sequence_length, activation="sigmoid")(x)  # Sigmoid for binary classification
     
+    # Compile the model
     model = models.Model(inputs=input_layer, outputs=output_layer)
-    
-    # Compile model
     model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
     
     return model
+from scipy.sparse import csr_matrix
 
 def main(args):
-    print(f"Input file: {args.input_file}")
-    print(f"Model architecture: {args.model_arch}")
+    print(f"{'-'*75}\nInput file: {args.input_file}\nModel architecture: {args.model_arch}")
 
     available_input_files = ["X_Y_output.npz"]
     available_model_arch = ["deep_cnn", "spliceai"]
 
-    # Validate input file
+    # Validate args
     if args.input_file not in available_input_files:
         print(f"Error: Invalid input file '{args.input_file}'. Available options are: {available_input_files}")
         sys.exit(1)
-
-    # Validate model architecture
     if args.model_arch not in available_model_arch:
         print(f"Error: Invalid model architecture '{args.model_arch}'. Available options are: {available_model_arch}")
         sys.exit(1)  
@@ -147,7 +158,7 @@ def main(args):
     X, Y = load_and_preprocess_data(args.input_file)
     np.set_printoptions(threshold=np.inf, linewidth=200)
 
-    print(f"Data processed successfully\n{'-'*20}\nInput shape (X): {X.shape}\nTarget shape (Y): {Y.shape}")
+    print(f"Data processed successfully\n{'-'*75}\nInput shape (X): {X.shape}\nTarget shape (Y): {Y.shape}")
 
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     X_train, X_val, Y_train, Y_val = train_test_split(X_train, Y_train, test_size=0.2, random_state=42)
