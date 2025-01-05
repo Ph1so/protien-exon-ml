@@ -34,7 +34,7 @@ def load_and_preprocess_data(file_path):
     Y = []
     
     for i, row in data.iterrows():
-        if len(X) == 2500:  # Stop when X reaches 1000 sequences
+        if len(X) == 2500:  
             break
         # Encode sequence
         seq = row["sequence"]
@@ -42,16 +42,14 @@ def load_and_preprocess_data(file_path):
         X.append(one_hot_seq)
         
         # Encode mask
-        mask = list(map(int, row["mask"]))  # Convert mask to a list of integers
+        mask = list(map(int, row["mask"]))  
         if len(mask) < SEQUENCE_LENGTH:
             mask = mask + [0] * (SEQUENCE_LENGTH - len(mask))  # Pad with zeros
         Y.append(mask)
     
-    # Convert to NumPy arrays
-    X = np.array(X, dtype=int)  # Ensure dtype is int
-    Y = np.array(Y, dtype=int)  # Ensure dtype is int
+    X = np.array(X, dtype=int)  
+    Y = np.array(Y, dtype=int) 
     
-    # Save X and Y to a DataFrame (keep as integer arrays, not lists)
     # Save to .npz file
     output_file = "X_Y_output.npz"
     np.savez(output_file, X=X, Y=Y)
