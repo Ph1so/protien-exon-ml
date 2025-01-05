@@ -4,6 +4,8 @@ import sys
 
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.utils import class_weight
+
 import tensorflow as tf
 from tensorflow.keras import layers, models, initializers
 
@@ -11,24 +13,6 @@ SEQUENCE_LENGTH = 1200
 AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
 amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}  # 20 amino acids
 
-def load_and_preprocess_data(file_path): 
-    """
-    Args:
-    - file_path (str): .npz file should have two columns X and Y
-    
-    Return
-    - X (NumPy array): input for the model. shape should be (batch size, SEQUENCE_LENGTH, 20 (20 amino acids))
-    - Y (NumPy array): target for the model. shape should be (batch size, SQUENCE_LENGTH)
-    """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"The file '{file_path}' does not exist.")
-    
-    data = np.load(file_path)
-    
-    X = data['X'] 
-    Y = data['Y']  
-    
-    return X, Y
 
 def residual_block(inputs, filters, kernel_size, strides):
     """Implements the Residual Block (RB) as shown in the SpliceAI diagram."""
@@ -94,24 +78,50 @@ def spliceai(vocab_size=20, embedding_dim=64):  # vocab_size should be 20 (for 2
     
     return model
 
-def deep_cnn_model(vocab_size=20, sequence_length=SEQUENCE_LENGTH):
-    """Build a deep CNN model for sequence classification."""
+def load_and_preprocess_data(file_path): 
+    """
+    Args:
+    - file_path (str): .npz file should have two columns X and Y
+    
+    Return
+    - X (NumPy array): input for the model. shape should be (batch size, SEQUENCE_LENGTH, 20 (20 amino acids))
+    - Y (NumPy array): target for the model. shape should be (batch size, SQUENCE_LENGTH)
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"The file '{file_path}' does not exist.")
+    
+    data = np.load(file_path)
+    
+    X = data['X'] 
+    Y = data['Y']  
+    
+    return X, Y
+
+def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LIST)):
     input_layer = layers.Input(shape=(sequence_length, vocab_size), name="Input_Layer")
+    
+    # First convolutional block
     x = layers.Conv1D(64, kernel_size=7, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
     x = layers.Conv1D(128, kernel_size=5, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     x = layers.MaxPooling1D(pool_size=2)(x)
+    
+    # Second convolutional block
     x = layers.Conv1D(256, kernel_size=3, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     x = layers.Conv1D(512, kernel_size=3, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     x = layers.MaxPooling1D(pool_size=2)(x)
-    x = layers.Conv1D(1024, kernel_size=3, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    
+    # Fully connected block
     x = layers.GlobalAveragePooling1D()(x)
-    x = layers.Dense(2048, activation="relu")(x)
-
-    output_layer = layers.Dense(sequence_length, activation="sigmoid")(x)
-
+    x = layers.Dense(1024, activation="relu")(x)
+    
+    # Output layer for sequence classification (binary classification for each position)
+    output_layer = layers.Dense(sequence_length, activation="sigmoid")(x)  # Sigmoid for binary classification
+    
     model = models.Model(inputs=input_layer, outputs=output_layer)
+    
+    # Compile model
     model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-
+    
     return model
 
 def main(args):
@@ -141,16 +151,32 @@ def main(args):
 
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     X_train, X_val, Y_train, Y_val = train_test_split(X_train, Y_train, test_size=0.2, random_state=42)
-
+    
     if args.model_arch == "deep_cnn":
         model = deep_cnn_model()
     elif args.model_arch == "spliceai":
         model = spliceai()
     model.summary()
 
+    # # Flatten the Y_train array to make it 1D
+    # Y_train_flat = Y_train.flatten()
+
+    # # Calculate dynamic class weights based on the flattened training set
+    # class_weights = class_weight.compute_class_weight(
+    #     class_weight='balanced', 
+    #     classes=np.unique(Y_train_flat), 
+    #     y=Y_train_flat
+    # )
+
+    # # Convert the class weights into a dictionary
+    # class_weight_dict = dict(zip(np.unique(Y_train_flat), class_weights))
+    # print(f"Class weights: {class_weight_dict}")
+
     # Use the validation set during training
     print(f"Beginning training.")
+    # model.fit(X_train, Y_train, validation_data=(X_val, Y_val), class_weight=class_weight_dict, batch_size=16, epochs=10)
     model.fit(X_train, Y_train, validation_data=(X_val, Y_val), batch_size=16, epochs=10)
+
 
     # Save the best model during training
     model.save("model_with_embeddings.h5")
@@ -168,10 +194,7 @@ def main(args):
         
         print(f"Sample {i + 1}:")
         print(f"Num 1s: {sum(binary_output.flatten())}")
-        # print(f"Num 1s: {sum(binary_output.flatten())}\nPrediction: {binary_output.flatten()}")  # Flatten in case it's a multi-dimensional array
-        # print(f"Actual Value: {actual_value}")
         print('-' * 30)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A script for running a machine learning model.")

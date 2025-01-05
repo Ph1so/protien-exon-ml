@@ -35,8 +35,6 @@ def load_and_preprocess_data(file_path):
     Y = []
     
     for i, row in data.iterrows():
-        if len(X) == 2500:  
-            break
         # Encode sequence
         seq = row["sequence"]
         one_hot_seq = encode_sequence(seq)
