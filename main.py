@@ -2,7 +2,6 @@ import os
 import argparse
 import sys
 
-import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
@@ -160,12 +159,19 @@ def main(args):
     test_loss, test_accuracy = model.evaluate(X_test, Y_test)
     print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
     
-    # Example prediction
-    X_example = X_test[2].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))  # Ensure input shape matches
-    prediction = model.predict(X_example)
-    binary_output = (prediction > 0.5).astype(int)
-    np.set_printoptions(threshold=np.inf)
-    print("Binary Output:\n", binary_output)
+    # Example prediction on 10 samples
+    for i in range(10):
+        X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))  # Ensure input shape matches
+        prediction = model.predict(X_example)
+        binary_output = (prediction > 0.5).astype(int)
+        actual_value = Y_test[i]
+        
+        print(f"Sample {i + 1}:")
+        print(f"Num 1s: {sum(binary_output.flatten())}")
+        # print(f"Num 1s: {sum(binary_output.flatten())}\nPrediction: {binary_output.flatten()}")  # Flatten in case it's a multi-dimensional array
+        # print(f"Actual Value: {actual_value}")
+        print('-' * 30)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A script for running a machine learning model.")
