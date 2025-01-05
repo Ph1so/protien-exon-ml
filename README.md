@@ -13,6 +13,11 @@ As of Jan 5th, the repo contains the following files:
 - `requirements.txt`
 - `documentation.md`
 
+However, these are the only ones you need to worry about:
+- `main.py`
+- `one_hot_encode_data.py`
+- `processed_file.csv`
+
 ---
 
 ### `main.py`
