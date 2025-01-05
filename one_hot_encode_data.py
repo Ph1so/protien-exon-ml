@@ -1,4 +1,6 @@
 import numpy as np
+import os
+import argparse
 import pandas as pd
 
 SEQUENCE_LENGTH = 1200
@@ -15,6 +17,8 @@ def encode_sequence(sequence):
 def load_and_preprocess_data(file_path):
     """Load data, preprocess it, and save X and Y to a CSV file."""
     # Load the data
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"The file '{file_path}' does not exist.")
     data = pd.read_csv(file_path)
     
     # Filter data for valid sequences (length <= SEQUENCE_LENGTH and no 'U')
@@ -53,9 +57,11 @@ def load_and_preprocess_data(file_path):
     np.savez(output_file, X=X, Y=Y)
     print(f"Saved X and Y to {output_file}, with {len(X)} sequences.")
 
-def main():
-    file_path = "processed_file.csv"
-    load_and_preprocess_data(file_path)
+def main(args):
+    load_and_preprocess_data(args.csv_file)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="A script for one hot encoding the data.")
+    parser.add_argument("--csv_file", type=str, required=True, help="Path to the input data file.")
+    args = parser.parse_args()
+    main(args)
