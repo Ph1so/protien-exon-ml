@@ -1,15 +1,14 @@
 import os
+import argparse
+import sys
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras import layers, models, initializers
 
-print("TensorFlow Version:", tf.__version__)
-print("Keras Version:", tf.keras.__version__)
-
 SEQUENCE_LENGTH = 1200
-# Amino acid encoding dictionary (same as before)
 amino_acid_dict = {char: idx for idx, char in enumerate("ARNDCEQGHILKMFPSTWYV")}  # 20 amino acids
 
 def load_and_preprocess_data(file_path): 
@@ -48,7 +47,7 @@ def residual_block(inputs, filters, kernel_size, strides):
 
     return x
 
-def build_model(vocab_size=20, embedding_dim=64):  # vocab_size should be 20 (for 20 amino acids)
+def spliceai(vocab_size=20, embedding_dim=64):  # vocab_size should be 20 (for 20 amino acids)
     """Builds the model architecture as per the updated diagram."""
     input_layer = layers.Input(shape=(SEQUENCE_LENGTH, vocab_size), name="Input_Layer")
     
@@ -109,20 +108,42 @@ def deep_cnn_model(vocab_size=20, sequence_length=SEQUENCE_LENGTH):
 
     return model
 
-def main():
-    file_path = "X_Y_output.npz"
-    X, Y = load_and_preprocess_data(file_path)
+def main(args):
+    print(f"Input file: {args.input_file}")
+    print(f"Model architecture: {args.model_arch}")
+
+    available_input_files = ["X_Y_output.npz"]
+    available_model_arch = ["deep_cnn", "spliceai"]
+
+    # Validate input file
+    if args.input_file not in available_input_files:
+        print(f"Error: Invalid input file '{args.input_file}'. Available options are: {available_input_files}")
+        sys.exit(1)
+
+    # Validate model architecture
+    if args.model_arch not in available_model_arch:
+        print(f"Error: Invalid model architecture '{args.model_arch}'. Available options are: {available_model_arch}")
+        sys.exit(1)  
+
+    print(f"All inputs are valid. Proceeding with loading and preprocessing data from {args.input_file}")
+
+    # Get data from a .npz file
+    X, Y = load_and_preprocess_data(args.input_file)
     np.set_printoptions(threshold=np.inf, linewidth=200)
-    print("Input shape (X):", X.shape)  
-    print("Target shape (Y):", Y.shape)
+
+    print(f"Data processed successfully\n{'-'*20}\nInput shape (X): {X.shape}\nTarget shape (Y): {Y.shape}")
 
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     X_train, X_val, Y_train, Y_val = train_test_split(X_train, Y_train, test_size=0.2, random_state=42)
 
-    model = deep_cnn_model()
+    if args.model_arch == "deep_cnn":
+        model = deep_cnn_model()
+    elif args.model_arch == "spliceai":
+        model = spliceai()
     model.summary()
 
     # Use the validation set during training
+    print(f"Beginning training.")
     model.fit(X_train, Y_train, validation_data=(X_val, Y_val), batch_size=16, epochs=10)
 
     # Save the best model during training
@@ -140,4 +161,8 @@ def main():
     print("Binary Output:\n", binary_output)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="A script for running a machine learning model.")
+    parser.add_argument("--input_file", type=str, required=True, help="Path to the input data file.")
+    parser.add_argument("--model_arch", type=str, required=True, help="Which model architecture to use.")
+    args = parser.parse_args()
+    main(args)
