@@ -136,7 +136,6 @@ def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LI
     model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
     
     return model
-from scipy.sparse import csr_matrix
 
 def main(args):
     print(f"{'-'*75}\nInput file: {args.input_file}\nModel architecture: {args.model_arch}")
@@ -158,7 +157,7 @@ def main(args):
     X, Y = load_and_preprocess_data(args.input_file)
     np.set_printoptions(threshold=np.inf, linewidth=200)
 
-    print(f"Data processed successfully\n{'-'*75}\nInput shape (X): {X.shape}\nTarget shape (Y): {Y.shape}")
+    print(f"Data processed successfully\nInput shape (X): {X.shape}\nTarget shape (Y): {Y.shape}\n{'-'*75}")
 
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     X_train, X_val, Y_train, Y_val = train_test_split(X_train, Y_train, test_size=0.2, random_state=42)
@@ -169,43 +168,46 @@ def main(args):
         model = spliceai()
     model.summary()
 
-    # # Flatten the Y_train array to make it 1D
-    # Y_train_flat = Y_train.flatten()
+    # Flatten the Y_train array to make it 1D
+    Y_train_flat = Y_train.flatten()
 
-    # # Calculate dynamic class weights based on the flattened training set
-    # class_weights = class_weight.compute_class_weight(
-    #     class_weight='balanced', 
-    #     classes=np.unique(Y_train_flat), 
-    #     y=Y_train_flat
-    # )
+    # Calculate dynamic class weights based on the flattened training set
+    class_weights = class_weight.compute_class_weight(
+        class_weight='balanced', 
+        classes=np.unique(Y_train_flat), 
+        y=Y_train_flat
+    )
 
-    # # Convert the class weights into a dictionary
-    # class_weight_dict = dict(zip(np.unique(Y_train_flat), class_weights))
-    # print(f"Class weights: {class_weight_dict}")
+    # Convert the class weights into a dictionary
+    class_weight_dict = dict(zip(np.unique(Y_train_flat), class_weights))
+    print(f"Class weights: {class_weight_dict}")
 
     # Use the validation set during training
     print(f"Beginning training.")
-    # model.fit(X_train, Y_train, validation_data=(X_val, Y_val), class_weight=class_weight_dict, batch_size=16, epochs=10)
-    model.fit(X_train, Y_train, validation_data=(X_val, Y_val), batch_size=16, epochs=10)
+    model.fit(X_train, Y_train, validation_data=(X_val, Y_val), class_weight=class_weight_dict, batch_size=16, epochs=10)
+    # model.fit(X_train, Y_train, validation_data=(X_val, Y_val), batch_size=16, epochs=10)
 
 
     # Save the best model during training
-    model.save("model_with_embeddings.h5")
+    model.save("model.keras")
     
     # Evaluate on the test set
-    test_loss, test_accuracy = model.evaluate(X_test, Y_test)
-    print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
+    print(f"\n{'-'*75}\nCalculating sum of predictions on all test samples...")
+    predictions = model.predict(X_test)  # Predict on the entire test set
+    binary_predictions = (predictions > 0.5).astype(int)  # Convert to binary
+    sum_predictions = np.sum(binary_predictions)  # Sum across all samples
+    print(f"Total sum of predictions: {sum_predictions}")
     
     # Example prediction on 10 samples
-    for i in range(10):
-        X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))  # Ensure input shape matches
-        prediction = model.predict(X_example)
-        binary_output = (prediction > 0.5).astype(int)
-        actual_value = Y_test[i]
+    # for i in range(10):
+    #     X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))  # Ensure input shape matches
+    #     prediction = model.predict(X_example)
+    #     binary_output = (prediction > 0.5).astype(int)
+    #     actual_value = Y_test[i]
         
-        print(f"Sample {i + 1}:")
-        print(f"Num 1s: {sum(binary_output.flatten())}")
-        print('-' * 30)
+    #     print(f"Sample {i + 1}:")
+    #     print(f"Num 1s: {sum(binary_output.flatten())}")
+    #     print('-' * 75)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A script for running a machine learning model.")
