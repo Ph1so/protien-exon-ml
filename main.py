@@ -12,20 +12,26 @@ SEQUENCE_LENGTH = 1200
 amino_acid_dict = {char: idx for idx, char in enumerate("ARNDCEQGHILKMFPSTWYV")}  # 20 amino acids
 
 def load_and_preprocess_data(file_path): 
+    """
+    Args:
+    - file_path (str): .npz file should have two columns X and Y
+    
+    Return
+    - X (NumPy array): input for the model. shape should be (batch size, SEQUENCE_LENGTH, 20 (20 amino acids))
+    - Y (NumPy array): target for the model. shape should be (batch size, SQUENCE_LENGTH)
+    """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"The file '{file_path}' does not exist.")
     
-    # Load the .npz file
     data = np.load(file_path)
     
-    # Access X and Y from the .npz file
-    X = data['X']  # X will be a NumPy array
-    Y = data['Y']  # Y will be a NumPy array
+    X = data['X'] 
+    Y = data['Y']  
     
     return X, Y
 
 def residual_block(inputs, filters, kernel_size, strides):
-    """Implements the Residual Block (RB) as shown in the diagram."""
+    """Implements the Residual Block (RB) as shown in the SpliceAI diagram."""
     # Main path
     x = layers.BatchNormalization()(inputs)
     x = layers.ReLU()(x)
@@ -48,7 +54,7 @@ def residual_block(inputs, filters, kernel_size, strides):
     return x
 
 def spliceai(vocab_size=20, embedding_dim=64):  # vocab_size should be 20 (for 20 amino acids)
-    """Builds the model architecture as per the updated diagram."""
+    """Builds the model architecture as per the SpliceAI diagram."""
     input_layer = layers.Input(shape=(SEQUENCE_LENGTH, vocab_size), name="Input_Layer")
     
     # Initial 1x1 convolution
