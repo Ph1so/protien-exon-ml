@@ -9,7 +9,8 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, initializers
 
 SEQUENCE_LENGTH = 1200
-amino_acid_dict = {char: idx for idx, char in enumerate("ARNDCEQGHILKMFPSTWYV")}  # 20 amino acids
+AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
+amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}  # 20 amino acids
 
 def load_and_preprocess_data(file_path): 
     """
@@ -160,7 +161,7 @@ def main(args):
     print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
     
     # Example prediction
-    X_example = X_test[2].reshape(1, SEQUENCE_LENGTH, 20)  # Ensure input shape matches
+    X_example = X_test[2].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))  # Ensure input shape matches
     prediction = model.predict(X_example)
     binary_output = (prediction > 0.5).astype(int)
     np.set_printoptions(threshold=np.inf)

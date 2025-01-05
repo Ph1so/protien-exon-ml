@@ -4,7 +4,8 @@ import argparse
 import pandas as pd
 
 SEQUENCE_LENGTH = 1200
-amino_acid_dict = {char: idx for idx, char in enumerate("ARNDCEQGHILKMFPSTWYV")}
+AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
+amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}
 
 def encode_sequence(sequence):
     """Encode a sequence into a one-hot encoded integer array."""

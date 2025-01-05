@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 
 # Constants
 SEQUENCE_LENGTH = 1200
-AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYVU"
+AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
 amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}
 
 # Convert protein sequences to integer encoding
