@@ -21,9 +21,9 @@ def load_and_preprocess_data(file_path):
         raise FileNotFoundError(f"The file '{file_path}' does not exist.")
     data = pd.read_csv(file_path)
     
-    # Filter data for valid sequences (length <= SEQUENCE_LENGTH and no 'U')
+    # Filter data for valid sequences (length <= SEQUENCE_LENGTH and no 'U' and no '1' in mask)
     data = data[(data["sequence"].str.len() <= SEQUENCE_LENGTH) & 
-                (~data["sequence"].str.contains("U"))].reset_index(drop=True)
+                (~data["sequence"].str.contains("U")) & (data["mask"].str.contains("1"))].reset_index(drop=True)
     
     # Drop rows with invalid or missing 'mask' values
     data = data[data["mask"].notna()]  # Ensure no NaN values in 'mask'
