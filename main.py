@@ -43,35 +43,35 @@ def spliceai(vocab_size=GROUPED_AMINO_ACIDS, embedding_dim=64):  # vocab_size sh
     input_layer = layers.Input(shape=(SEQUENCE_LENGTH, vocab_size), name="Input_Layer")
     
     # Initial 1x1 convolution
-    x1 = layers.Conv1D(32, kernel_size=1, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
-    x2 = layers.Conv1D(32, kernel_size=1, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
-    x3 = layers.Conv1D(32, kernel_size=1, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
+    x1 = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
+    x2 = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
+    x3 = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
     
     # First block of residual layers (4 RBs with kernel size 11 and stride 1)
     for _ in range(4):
-        x1 = residual_block(x1, filters=32, kernel_size=11, strides=1)
+        x1 = residual_block(x1, filters=32, kernel_size=11)
     for _ in range(4):
-        x2 = residual_block(x2, filters=32, kernel_size=11, strides=1)
+        x2 = residual_block(x2, filters=32, kernel_size=11)
     for _ in range(4):
-        x3 = residual_block(x3, filters=32, kernel_size=11, strides=1)
+        x3 = residual_block(x3, filters=32, kernel_size=11)
 
     # Concatenate the outputs of the 3 convolutions
     x = layers.Concatenate()([x1, x2, x3])
 
     # Intermediate 1x1 convolution
-    x = layers.Conv1D(32, kernel_size=1, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    x = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     
     # Second block of residual layers (4 RBs with kernel size 11 and stride 4)
     for _ in range(4):
-        x = residual_block(x, filters=32, kernel_size=11, strides=4)
+        x = residual_block(x, filters=32, kernel_size=11)
     
     # Final 1x1 convolution before output
-    x = layers.Conv1D(32, kernel_size=1, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    x = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
 
-    x = layers.Conv1D(3, kernel_size=1, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    x = layers.Conv1D(3, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
 
     # Output layer
-    x = layers.Conv1D(1, kernel_size=1, strides=1, activation="sigmoid", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    x = layers.Conv1D(1, kernel_size=1, activation="sigmoid", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     output_layer = layers.Reshape((SEQUENCE_LENGTH,))(x)
 
     model = models.Model(inputs=input_layer, outputs=output_layer)
