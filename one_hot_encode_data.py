@@ -7,6 +7,18 @@ SEQUENCE_LENGTH = 1200
 AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
 amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}
 
+GROUPED_AMINO_ACIDS = ["GVAR", "EDSK", "LIPT", "NWQC", "NMHY"]
+
+def grouped_encode_sequence(sequence):
+    """Encode a sequence into a grouped one-hot encoded integer array."""
+    one_hot_seq = np.zeros((SEQUENCE_LENGTH, len(GROUPED_AMINO_ACIDS)), dtype=int)  # Ensure dtype=int
+    for i, char in enumerate(sequence):
+        for j, group in enumerate(GROUPED_AMINO_ACIDS):
+            if char in group:  
+                one_hot_seq[i, j] = 1  # Assign 1 to the appropriate group
+                break  # Stop after the first match (one-to-one mapping)
+    return one_hot_seq
+
 def encode_sequence(sequence):
     """Encode a sequence into a one-hot encoded integer array."""
     one_hot_seq = np.zeros((SEQUENCE_LENGTH, len(amino_acid_dict)), dtype=int)  # Ensure dtype=int
@@ -14,6 +26,7 @@ def encode_sequence(sequence):
         if char in amino_acid_dict:  # Ignore invalid characters
             one_hot_seq[i, amino_acid_dict[char]] = 1
     return one_hot_seq
+
 
 def load_and_preprocess_data(file_path):
     """Load data, preprocess it, and save X and Y to a CSV file."""
@@ -37,7 +50,7 @@ def load_and_preprocess_data(file_path):
     for i, row in data.iterrows():
         # Encode sequence
         seq = row["sequence"]
-        one_hot_seq = encode_sequence(seq)
+        one_hot_seq = grouped_encode_sequence(seq)
         X.append(one_hot_seq)
         
         # Encode mask

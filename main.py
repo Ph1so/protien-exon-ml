@@ -13,6 +13,7 @@ SEQUENCE_LENGTH = 1200
 AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
 amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}  # 20 amino acids
 
+GROUPED_AMINO_ACIDS = ["GVAR","EDSK", "LIPT", "NWQC", "NMHY"]
 
 def residual_block(inputs, filters, kernel_size, strides):
     """Implements the Residual Block (RB) as shown in the SpliceAI diagram."""
@@ -37,7 +38,7 @@ def residual_block(inputs, filters, kernel_size, strides):
 
     return x
 
-def spliceai(vocab_size=20, embedding_dim=64):  # vocab_size should be 20 (for 20 amino acids)
+def spliceai(vocab_size=GROUPED_AMINO_ACIDS, embedding_dim=64):  # vocab_size should be 20 (for 20 amino acids)
     """Builds the model architecture as per the SpliceAI diagram."""
     input_layer = layers.Input(shape=(SEQUENCE_LENGTH, vocab_size), name="Input_Layer")
     
@@ -97,7 +98,7 @@ def load_and_preprocess_data(file_path):
     
     return X, Y
 
-def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LIST)):
+def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(GROUPED_AMINO_ACIDS)):
     """
     Builds a CNN model optimized for sparse matrices.
     
@@ -199,15 +200,16 @@ def main(args):
     print(f"Total sum of predictions: {sum_predictions}")
     
     # Example prediction on 10 samples
-    # for i in range(10):
-    #     X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))  # Ensure input shape matches
-    #     prediction = model.predict(X_example)
-    #     binary_output = (prediction > 0.5).astype(int)
-    #     actual_value = Y_test[i]
+    for i in range(10):
+        X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(GROUPED_AMINO_ACIDS))  # Ensure input shape matches
+        prediction = model.predict(X_example)
+        binary_output = (prediction > 0.5).astype(int)
+        actual_value = Y_test[i]
         
-    #     print(f"Sample {i + 1}:")
-    #     print(f"Num 1s: {sum(binary_output.flatten())}")
-    #     print('-' * 75)
+        print(f"Sample {i + 1}:")
+        print(f"Num 1s: {sum(binary_output.flatten())}")
+        print(f"Y: {actual_value}")
+        print('-' * 75)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="A script for running a machine learning model.")
