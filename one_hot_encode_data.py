@@ -3,7 +3,7 @@ import os
 import argparse
 import pandas as pd
 
-SEQUENCE_LENGTH = 1200
+SEQUENCE_LENGTH = 600
 AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
 amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}
 
@@ -36,8 +36,12 @@ def load_and_preprocess_data(file_path):
     data = pd.read_csv(file_path)
     
     # Filter data for valid sequences (length <= SEQUENCE_LENGTH and no 'U' and no '1' in mask)
-    data = data[(data["sequence"].str.len() <= SEQUENCE_LENGTH) & 
-                (~data["sequence"].str.contains("U")) & (data["mask"].str.contains("1"))].reset_index(drop=True)
+    data = data[
+    (data["sequence"].str.len() <= SEQUENCE_LENGTH) & 
+    (~data["sequence"].str.contains("U")) & 
+    (data["mask"].str.contains("1"))
+].reset_index(drop=True)
+
     
     # Drop rows with invalid or missing 'mask' values
     data = data[data["mask"].notna()]  # Ensure no NaN values in 'mask'
@@ -50,7 +54,7 @@ def load_and_preprocess_data(file_path):
     for i, row in data.iterrows():
         # Encode sequence
         seq = row["sequence"]
-        one_hot_seq = grouped_encode_sequence(seq)
+        one_hot_seq = encode_sequence(seq)
         X.append(one_hot_seq)
         
         # Encode mask

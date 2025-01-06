@@ -9,75 +9,36 @@ from sklearn.utils import class_weight
 import tensorflow as tf
 from tensorflow.keras import layers, models, initializers
 
-SEQUENCE_LENGTH = 1200
+SEQUENCE_LENGTH = 600
 AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
 amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}  # 20 amino acids
 
 GROUPED_AMINO_ACIDS = ["GVAR","EDSK", "LIPT", "NWQC", "NMHY"]
 
-def residual_block(inputs, filters, kernel_size, strides):
-    """Implements the Residual Block (RB) as shown in the SpliceAI diagram."""
-    # Main path
-    x = layers.BatchNormalization()(inputs)
-    x = layers.ReLU()(x)
-    x = layers.Conv1D(filters, kernel_size=kernel_size, strides=strides, padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-
-    x = layers.BatchNormalization()(x)
-    x = layers.ReLU()(x)
-    x = layers.Conv1D(filters, kernel_size=kernel_size, strides=strides, padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-
-    # Shortcut path
-    shortcut = layers.Conv1D(filters, kernel_size=1, strides=1, padding="same", kernel_initializer=initializers.GlorotUniform())(inputs)
-
-    # Adjust shortcut if necessary to match the shape of x
-    if x.shape[1] != shortcut.shape[1]:  # If the sequence lengths differ
-        shortcut = layers.Conv1D(filters, kernel_size=1, strides=strides, padding="same", kernel_initializer=initializers.GlorotUniform())(shortcut)
-
-    # Add the main path and shortcut
-    x = layers.Add()([x, shortcut])
-
-    return x
-
-def spliceai(vocab_size=GROUPED_AMINO_ACIDS, embedding_dim=64):  # vocab_size should be 20 (for 20 amino acids)
-    """Builds the model architecture as per the SpliceAI diagram."""
-    input_layer = layers.Input(shape=(SEQUENCE_LENGTH, vocab_size), name="Input_Layer")
+def focal_loss(alpha=0.25, gamma=2.0):
+    """
+    Focal loss for binary classification.
+    Args:
+        alpha (float): Balancing factor for the rare class (junction spots).
+        gamma (float): Focusing parameter for hard examples.
+    Returns:
+        A loss function to be used in model.compile().
+    """
+    def loss_fn(y_true, y_pred):
+        # Clip predictions to avoid log(0) errors
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1 - 1e-7)
+        
+        # Compute the cross-entropy component
+        cross_entropy = -y_true * tf.math.log(y_pred) - (1 - y_true) * tf.math.log(1 - y_pred)
+        
+        # Add the focal weight
+        focal_weight = y_true * (1 - y_pred)**gamma + (1 - y_true) * y_pred**gamma
+        
+        # Combine alpha and focal weights
+        loss = alpha * focal_weight * cross_entropy
+        return tf.reduce_mean(loss)
     
-    # Initial 1x1 convolution
-    x1 = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
-    x2 = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
-    x3 = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
-    
-    # First block of residual layers (4 RBs with kernel size 11 and stride 1)
-    for _ in range(4):
-        x1 = residual_block(x1, filters=32, kernel_size=11)
-    for _ in range(4):
-        x2 = residual_block(x2, filters=32, kernel_size=11)
-    for _ in range(4):
-        x3 = residual_block(x3, filters=32, kernel_size=11)
-
-    # Concatenate the outputs of the 3 convolutions
-    x = layers.Concatenate()([x1, x2, x3])
-
-    # Intermediate 1x1 convolution
-    x = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    
-    # Second block of residual layers (4 RBs with kernel size 11 and stride 4)
-    for _ in range(4):
-        x = residual_block(x, filters=32, kernel_size=11)
-    
-    # Final 1x1 convolution before output
-    x = layers.Conv1D(32, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-
-    x = layers.Conv1D(3, kernel_size=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-
-    # Output layer
-    x = layers.Conv1D(1, kernel_size=1, activation="sigmoid", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    output_layer = layers.Reshape((SEQUENCE_LENGTH,))(x)
-
-    model = models.Model(inputs=input_layer, outputs=output_layer)
-    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])  # binary because its 0 or 1 - splice ai used softmax because there are 3 categories
-    
-    return model
+    return loss_fn
 
 def load_and_preprocess_data(file_path): 
     """
@@ -98,7 +59,7 @@ def load_and_preprocess_data(file_path):
     
     return X, Y
 
-def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(GROUPED_AMINO_ACIDS)):
+def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LIST)):
     """
     Builds a CNN model optimized for sparse matrices.
     
@@ -112,30 +73,23 @@ def deep_cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(GROUPED_AMINO
     # Input layer for sparse data
     input_layer = layers.Input(shape=(sequence_length, vocab_size), name="Input_Layer", sparse=True)
     
-    # Convert sparse input to dense (if required by Conv1D)
-    x = layers.Dense(vocab_size, activation="relu")(input_layer)
-
-    # First convolutional block
-    x = layers.Conv1D(64, kernel_size=7, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    x = layers.Conv1D(128, kernel_size=5, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    x = layers.MaxPooling1D(pool_size=2)(x)
+    # Convolutional layers
+    x = layers.Conv1D(64, kernel_size=7, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
+    x = layers.Conv1D(128, kernel_size=5, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    x = layers.Conv1D(256, kernel_size=3, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
+    x = layers.Conv1D(512, kernel_size=3, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
     
-    # Second convolutional block
-    x = layers.Conv1D(256, kernel_size=3, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    x = layers.Conv1D(512, kernel_size=3, strides=1, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    x = layers.MaxPooling1D(pool_size=2)(x)
-    
-    # Global Average Pooling to reduce dimensions
+    # Replace Flatten with GlobalAveragePooling1D to maintain vector length consistency
     x = layers.GlobalAveragePooling1D()(x)
-    x = layers.Dense(1024, activation="relu")(x)
     
-    # Output layer for sequence classification (binary classification for each position)
+    # Output layer
     output_layer = layers.Dense(sequence_length, activation="sigmoid")(x)  # Sigmoid for binary classification
     
     # Compile the model
     model = models.Model(inputs=input_layer, outputs=output_layer)
-    model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-    
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    model.compile(optimizer=optimizer, loss=focal_loss(alpha=0.25, gamma=2.0), metrics=["accuracy"])
+
     return model
 
 def main(args):
@@ -162,31 +116,40 @@ def main(args):
 
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
     X_train, X_val, Y_train, Y_val = train_test_split(X_train, Y_train, test_size=0.2, random_state=42)
-    
+    # add args to batch size and args 
     if args.model_arch == "deep_cnn":
         model = deep_cnn_model()
-    elif args.model_arch == "spliceai":
-        model = spliceai()
+    # elif args.model_arch == "spliceai":
+        # model = spliceai()
     model.summary()
 
     # Flatten the Y_train array to make it 1D
-    Y_train_flat = Y_train.flatten()
+    # Y_train_flat = Y_train.flatten()
 
     # Calculate dynamic class weights based on the flattened training set
-    class_weights = class_weight.compute_class_weight(
-        class_weight='balanced', 
-        classes=np.unique(Y_train_flat), 
-        y=Y_train_flat
-    )
+    # class_weights = class_weight.compute_class_weight(
+    #     class_weight='balanced', 
+    #     classes=np.unique(Y_train_flat), 
+    #     y=Y_train_flat
+    # )
 
-    # Convert the class weights into a dictionary
-    class_weight_dict = dict(zip(np.unique(Y_train_flat), class_weights))
-    print(f"Class weights: {class_weight_dict}")
-
+    # # Convert the class weights into a dictionary
+    # class_weight_dict = dict(zip(np.unique(Y_train_flat), class_weights))
+    # print(f"Class weights: {class_weight_dict}")
+    # class_weight_dict = {0: 0.1, 1: 1000}
     # Use the validation set during training
+
     print(f"Beginning training.")
-    model.fit(X_train, Y_train, validation_data=(X_val, Y_val), class_weight=class_weight_dict, batch_size=16, epochs=10)
-    # model.fit(X_train, Y_train, validation_data=(X_val, Y_val), batch_size=16, epochs=10)
+    callback_early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    callback_lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3)
+    model.fit(
+    X_train, Y_train, 
+    validation_data=(X_val, Y_val), 
+    batch_size=16, 
+    epochs=100, 
+    callbacks=[callback_early_stopping, callback_lr_scheduler])
+# learning rate, weight decay, start with 0.0001 learning rate
+        # model.fit(X_train, Y_train, validation_data=(X_val, Y_val), batch_size=16, epochs=10)
 
 
     # Save the best model during training
@@ -201,13 +164,14 @@ def main(args):
     
     # Example prediction on 10 samples
     for i in range(10):
-        X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(GROUPED_AMINO_ACIDS))  # Ensure input shape matches
+        X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))
         prediction = model.predict(X_example)
         binary_output = (prediction > 0.5).astype(int)
         actual_value = Y_test[i]
         
         print(f"Sample {i + 1}:")
         print(f"Num 1s: {sum(binary_output.flatten())}")
+        print(f"X: {binary_output.flatten()}")
         print(f"Y: {actual_value}")
         print('-' * 75)
 
