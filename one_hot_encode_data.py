@@ -60,7 +60,7 @@ def load_and_preprocess_data(file_path):
         # Encode mask
         mask = list(map(int, row["mask"]))  
         if len(mask) < SEQUENCE_LENGTH:
-            mask = mask + [0] * (SEQUENCE_LENGTH - len(mask))  # Pad with zeros
+            mask = mask + [0] * (SEQUENCE_LENGTH - len(mask))  # TODO: Pad with something else, non 1 and non 0
         Y.append(mask)
     
     X = np.array(X, dtype=int)  
