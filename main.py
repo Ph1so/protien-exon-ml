@@ -8,15 +8,72 @@ from sklearn.utils import class_weight
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 
-
 import tensorflow as tf
 from tensorflow.keras import layers, models, initializers
+from tensorflow.keras.layers import Input, Embedding, LSTM, Dense, Bidirectional, TimeDistributed, Masking
+from tensorflow.keras.models import Model
 
-SEQUENCE_LENGTH = 600
-AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"
-amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}  # 20 amino acids
+MIN_SEQUENCE_LENGTH = 0
+SEQUENCE_LENGTH = 1300
+AMINO_ACID_LIST = "ARNDCEQGHILKMFPSTWYV"  # 20 amino acids
+amino_acid_dict = {char: idx for idx, char in enumerate(AMINO_ACID_LIST)}
+PADDING_INDEX = len(amino_acid_dict)  # Assign the last index for padding
+amino_acid_dict["<PAD>"] = PADDING_INDEX  # Add padding as a special "amino acid"
 
 GROUPED_AMINO_ACIDS = ["GVAR","EDSK", "LIPT", "NWQC", "NMHY"]
+
+def load_and_preprocess_data(file_path): 
+    """
+    Args:
+    - file_path (str): .npz file should have two columns X and Y
+    
+    Return
+    - X (NumPy array): input for the model. shape should be (batch size, SEQUENCE_LENGTH, 20 (20 amino acids))
+    - Y (NumPy array): target for the model. shape should be (batch size, SQUENCE_LENGTH, 2) [One-hot encoded]
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"The file '{file_path}' does not exist.")
+    
+    data = np.load(file_path)
+    
+    X = data['X'] 
+    Y = data['Y']  
+    
+    # Convert Y to one-hot encoded format: [0, 1] for 1, [1, 0] for 0, [0, 0] for padding
+    Y_one_hot = np.zeros((Y.shape[0], Y.shape[1], 2))  # (batch_size, sequence_length, 2)
+    for i in range(Y.shape[0]):
+        for j in range(Y.shape[1]):
+            # Use np.argmax to get the index of the class in the one-hot encoded vector
+            class_idx = np.argmax(Y[i, j])
+            if class_idx == 0:
+                Y_one_hot[i, j] = [1, 0]  # Label 0
+            elif class_idx == 1:
+                Y_one_hot[i, j] = [0, 1]  # Label 1
+            else:
+                Y_one_hot[i, j] = [0, 0]  # Padding
+            
+    return X, Y_one_hot
+
+def print_random_samples(model, X_test, Y_test, num_samples=10):
+    # Generate model predictions
+    predictions = model.predict(X_test)
+
+    # Convert predictions from one-hot encoded to class labels (argmax)
+    predicted_classes = np.argmax(predictions, axis=-1)
+    true_classes = np.argmax(Y_test, axis=-1)  # Assuming Y_test is one-hot encoded
+    sum = 0
+    # Randomly sample indices
+    random_indices = np.random.choice(len(X_test), num_samples, replace=False)
+
+    print(f"Displaying {num_samples} random samples from the test set:\n")
+    for idx in random_indices:
+        print(f"Sample {idx+1}:")
+        # print(f"  Predicted: {predicted_classes[idx]}")
+        # print(f"  Expected: {true_classes[idx]}")
+        print(f"num 1s: {np.sum(predicted_classes[idx])}")
+        print("-" * 50)
+        sum += np.sum(predicted_classes[idx])
+    print(f"sum 1s: {sum}")
 
 def focal_loss(alpha=0.25, gamma=2.0):
     """
@@ -43,71 +100,132 @@ def focal_loss(alpha=0.25, gamma=2.0):
     
     return loss_fn
 
-def load_and_preprocess_data(file_path): 
+def cnn_model(
+    sequence_length=SEQUENCE_LENGTH,
+    vocab_size=len(AMINO_ACID_LIST)+1,
+    kernel_size=3,
+    dropout_rate=0.3,
+    learning_rate=0.001,
+    output_activation="softmax",  # Change to softmax since we're doing multi-class classification
+    loss_function="categorical_crossentropy",  # Change to categorical crossentropy
+):
     """
-    Args:
-    - file_path (str): .npz file should have two columns X and Y
-    
-    Return
-    - X (NumPy array): input for the model. shape should be (batch size, SEQUENCE_LENGTH, 20 (20 amino acids))
-    - Y (NumPy array): target for the model. shape should be (batch size, SQUENCE_LENGTH)
-    """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"The file '{file_path}' does not exist.")
-    
-    data = np.load(file_path)
-    
-    X = data['X'] 
-    Y = data['Y']  
-    
-    return X, Y
+    Builds an optimized hybrid CNN model for protein sequence data.
 
-def cnn_model(sequence_length=SEQUENCE_LENGTH, vocab_size=len(AMINO_ACID_LIST)):
-    """
-    Builds a smaller CNN model optimized for sparse matrices and faster convergence.
-    
     Args:
-    - sequence_length: Length of input sequences.
-    - vocab_size: Number of unique features (e.g., amino acids).
-    
+    - sequence_length (int): Length of input sequences.
+    - vocab_size (int): Number of unique features (e.g., amino acids).
+    - kernel_size (int): Size of the convolutional filters.
+    - dropout_rate (float): Dropout rate for regularization.
+    - learning_rate (float): Learning rate for the optimizer.
+    - output_activation (str): Activation function for the output layer.
+    - loss_function (str): Loss function for model compilation.
+
     Returns:
-    - Compiled smaller CNN model.
+    - tf.keras.Model: Compiled CNN model.
     """
-    # Input layer for sparse data
-    input_layer = layers.Input(shape=(sequence_length, vocab_size), name="Input_Layer", sparse=True)
-    
-    # Convolutional layers with reduced depth
-    x = layers.Conv1D(64, kernel_size=7, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(input_layer)
-    x = layers.Conv1D(128, kernel_size=5, activation="relu", padding="same", kernel_initializer=initializers.GlorotUniform())(x)
-    
-    # GlobalAveragePooling1D to reduce the dimensions without over-parameterization
-    x = layers.GlobalAveragePooling1D()(x)
-    
-    # Output layer with sigmoid activation for binary classification
-    output_layer = layers.Dense(sequence_length, activation="sigmoid")(x)
-    
+    # Input layer
+    input_layer = layers.Input(shape=(sequence_length, vocab_size), name="Input_Layer")
+
+    # First Conv1D layer
+    x = layers.Conv1D(
+        filters=32,
+        kernel_size=kernel_size,
+        activation="relu",
+        padding="same",
+        kernel_initializer=initializers.GlorotUniform(),
+        name="Conv1D_1",
+    )(input_layer)
+    x = layers.BatchNormalization(name="BatchNorm_1")(x)
+    x = layers.Dropout(dropout_rate, name="Dropout_1")(x)
+
+    # Second Conv1D layer
+    x = layers.Conv1D(
+        filters=64,
+        kernel_size=kernel_size,
+        activation="relu",
+        padding="same",
+        kernel_initializer=initializers.GlorotUniform(),
+        name="Conv1D_2",
+    )(x)
+    x = layers.BatchNormalization(name="BatchNorm_2")(x)
+    x = layers.Dropout(dropout_rate, name="Dropout_2")(x)
+
+    # Third Conv1D layer
+    x = layers.Conv1D(
+        filters=128,
+        kernel_size=kernel_size,
+        activation="relu",
+        padding="same",
+        kernel_initializer=initializers.GlorotUniform(),
+        name="Conv1D_3",
+    )(x)
+    x = layers.BatchNormalization(name="BatchNorm_3")(x)
+    x = layers.Dropout(dropout_rate, name="Dropout_3")(x)
+
+    # Fourth Conv1D layer
+    x = layers.Conv1D(
+        filters=256,
+        kernel_size=kernel_size,
+        activation="relu",
+        padding="same",
+        kernel_initializer=initializers.GlorotUniform(),
+        name="Conv1D_4",
+    )(x)
+    x = layers.BatchNormalization(name="BatchNorm_4")(x)
+    x = layers.Dropout(dropout_rate, name="Dropout_4")(x)
+
+    # Add a Conv1D layer to adjust the number of output units to match the sequence length
+    x = layers.Conv1D(
+        filters=2,  # 2 classes
+        kernel_size=1,  # Small kernel to keep sequence length the same
+        activation="softmax",  # Softmax for multi-class classification
+        padding="same",
+        name="Conv1D_Output",
+    )(x)
+
+    # Output layer (no need for reshape)
+    output_layer = x
+
     # Compile the model
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
-    model = models.Model(inputs=input_layer, outputs=output_layer)
-    model.compile(optimizer=optimizer, loss=focal_loss(alpha=0.25, gamma=2.0), metrics=["accuracy"])
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    model = models.Model(inputs=input_layer, outputs=output_layer, name="ProteinCNNModel")
+    model.compile(optimizer=optimizer, loss=loss_function, metrics=["accuracy"])
+
+    return model
+
+def lstm(input_dim, embedding_dim, lstm_units):
+    """
+    Builds an LSTM model for predicting exon junction locations.
+
+    Args:
+        input_dim (int): Size of the input vocabulary (e.g., amino acid tokens).
+        embedding_dim (int): Dimensionality of the embedding layer.
+        lstm_units (int): Number of units in the LSTM layer.
+
+    Returns:
+        tf.keras.Model: A compiled LSTM model.
+    """
+    # Define the input layer (variable-length protein sequences)
+    inputs = Input(shape=(None, input_dim), dtype='float32', name='protein_sequence')  # Expecting sequences with shape (None, input_dim)
+
+    # Masking layer for handling padded sequences
+    masked_inputs = Masking(mask_value=0)(inputs)
+
+    # Bidirectional LSTM layer for sequence encoding
+    lstm_out = Bidirectional(LSTM(units=lstm_units, return_sequences=True))(masked_inputs)
+
+    # TimeDistributed Dense layer for binary classification (junction or not) without mask
+    outputs = TimeDistributed(Dense(2, activation='softmax'))(lstm_out)
+
+    # Define and compile the model
+    model = Model(inputs=inputs, outputs=outputs)
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
     return model
 
 def main(args):
     print(f"{'-'*75}\nInput file: {args.input_file}\nModel architecture: {args.model_arch}")
-
-    # Validate args
-    available_input_files = ["X_Y_output.npz"]
-    available_model_arch = ["deep_cnn", "spliceai"]
-
-    if args.input_file not in available_input_files:
-        print(f"Error: Invalid input file '{args.input_file}'. Available options are: {available_input_files}")
-        sys.exit(1)
-    if args.model_arch not in available_model_arch:
-        print(f"Error: Invalid model architecture '{args.model_arch}'. Available options are: {available_model_arch}")
-        sys.exit(1)  
-
-    print(f"All inputs are valid. Proceeding with loading and preprocessing data from {args.input_file}")
 
     # Load data
     X, Y = load_and_preprocess_data(args.input_file)
@@ -119,105 +237,42 @@ def main(args):
     # Build model
     if args.model_arch == "deep_cnn":
         model = cnn_model()
+    if args.model_arch == "lstm":
+        model = lstm(len(amino_acid_dict), 50, 128)
     model.summary()
 
     # Train model
     print(f"Beginning training.")
     callback_early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     callback_lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3)
+    
     model.fit(
         X_train, Y_train, 
-        validation_data=(X_val, Y_val), 
-        class_weight = {0: 0.5, 1: 150},
-        batch_size=16, 
-        epochs=10, 
+        validation_data=(X_val, Y_val),
+        epochs=5, batch_size=32,
         callbacks=[callback_early_stopping, callback_lr_scheduler]
     )
 
-    # Save model
-    model.save("model.keras")
+    # Evaluate the model
+    print("\nEvaluating on the test set...")
+    test_loss, test_accuracy = model.evaluate(X_test, Y_test)
+    print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.4f}")
     
-    # Evaluate on the test set
-    print(f"\n{'-'*75}\nEvaluating on the test set...")
-
-    # Predict for the entire test set in one batch
+    # Make predictions and compare
     predictions = model.predict(X_test)
-
-    # Distribution of differences
-    differences = []
-
-    # Suppress TensorFlow logging if needed
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow logs
-    tf.get_logger().setLevel('ERROR')
-
-    for i in range(len(X_test)):
-        # Get prediction for a single example
-        X_example = X_test[i].reshape(1, SEQUENCE_LENGTH, len(AMINO_ACID_LIST))
-        prediction = predictions[i].reshape(1, -1)  # Use precomputed predictions
-        actual_value = Y_test[i]
-
-        if isinstance(actual_value, np.ndarray):
-            indices_of_1 = np.where(actual_value == 1)[0]
-            if len(indices_of_1) > 0:
-                # Average value at indices of 1
-                values_in_prediction = prediction[0][indices_of_1]
-                average_of_selected = np.mean(values_in_prediction)
-
-                # Overall average prediction
-                overall_average_prediction = np.mean(prediction)
-
-                # Difference
-                difference = average_of_selected - overall_average_prediction
-                differences.append(difference)
-
-    # Analyze distribution of differences
-    differences = np.array(differences)
-    mean_difference = np.mean(differences)
-    positive_proportion = np.sum(differences > 0) / len(differences)
-
-    print(f"\n{'-'*75}")
-    print(f"Mean difference: {mean_difference:.4f}")
-    print(f"Proportion of positive differences: {positive_proportion:.4f}")
-
-    # Perform one-sample t-test
-    from scipy.stats import ttest_1samp
-
-    t_stat, p_value = ttest_1samp(differences, popmean=0)
-
-    # Print the results of the t-test
-    print(f"\n{'-'*75}")
-    print(f"T-statistic: {t_stat:.9f}")
-    print(f"P-value: {p_value:.9f}")
-
-    # Interpret the result
-    if p_value < 0.05:
-        print("The mean difference is statistically significant (p < 0.05).")
-    else:
-        print("The mean difference is not statistically significant (p >= 0.05).")
-
-
-    # Optional: Plot histogram of differences
-    try:
-        import matplotlib.pyplot as plt
-        plt.hist(differences, bins=20, edgecolor="k")
-        plt.title("Distribution of Average Differences")
-        plt.xlabel("Difference (Selected Avg - Overall Avg)")
-        plt.ylabel("Frequency")
-
-        # Save the histogram as an image
-        output_image_path = "difference_histogram.png"
-        plt.savefig(output_image_path)
-        print(f"Histogram saved as {output_image_path}")
-        plt.close()  # Close the figure to avoid displaying it
-    except ImportError:
-        print("matplotlib not available; skipping histogram.")
-
-
-
+    predicted_classes = np.argmax(predictions, axis=-1)
+    model.save("model.keras")
+    print_random_samples(model, X_test, Y_test)
+    return model
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="A script for running a machine learning model.")
-    parser.add_argument("--input_file", type=str, required=True, help="Path to the input data file.")
-    parser.add_argument("--model_arch", type=str, required=True, help="Which model architecture to use.")
+    parser = argparse.ArgumentParser(description="Protein Sequence Classification")
+    parser.add_argument(
+        "--input_file", type=str, choices=["X_Y_output.npz"], default="X_Y_output.npz", help="Path to input file."
+    )
+    parser.add_argument(
+        "--model_arch", type=str, choices=["deep_cnn", "lstm"], default="deep_cnn", help="Model architecture."
+    )
     args = parser.parse_args()
+
     main(args)
